@@ -41,21 +41,76 @@ static void ReleaseFileGLTFCallback(const struct cgltf_memory_options* memoryOpt
     UnloadFileData((unsigned char*)data);
 }
 
-std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* data)
+std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* data, Scene& outScene)
 {
-    std::unique_ptr<SceneObject> sceneNode = std::make_unique<SceneObject>();
+    bool storeTransform = true;
+
+    std::unique_ptr<SceneObject> sceneNode = nullptr;
+    if (node->camera)
+    {
+        sceneNode = std::make_unique<CameraSceneObject>();
+		CameraSceneObject* camera = static_cast<CameraSceneObject*>(sceneNode.get());
+
+		camera->FOV = RAD2DEG * node->camera->data.perspective.yfov;
+        outScene.Cameras.push_back(camera);
+    }
+	else if (node->light)
+	{
+        sceneNode = std::make_unique<LightSceneObject>();
+        LightSceneObject* light = static_cast<LightSceneObject*>(sceneNode.get());
+
+		light->EmissiveColor = Color{ (unsigned char)(node->light->color[0] * 255), (unsigned char)(node->light->color[1] * 255), (unsigned char)(node->light->color[2] * 255), 255 }; 
+        light->Intensity = 1.0f;// node->light->intensity;
+
+        switch (node->light->type)
+        {
+		case cgltf_light_type_point:
+			light->LightType = LightSceneObject::LightTypes::Point;
+			light->Range = node->light->range;
+			break;
+		case cgltf_light_type_directional:
+			light->LightType = LightSceneObject::LightTypes::Directional;
+			break;
+		case cgltf_light_type_spot:
+			light->LightType = LightSceneObject::LightTypes::Spot;
+			light->Range = node->light->range;
+			light->MinCone = node->light->spot_inner_cone_angle;
+			light->MaxCone = node->light->spot_outer_cone_angle;
+            break;
+        }
+
+        outScene.Lights.push_back(light);
+	}
+	else if (node->mesh)
+	{
+        sceneNode = std::make_unique<MeshSceneObject>();
+	}
+    else
+    {
+        sceneNode = std::make_unique<SceneObject>();
+    }
+
     sceneNode->Name = node->name ? node->name : "";
-    sceneNode->Transform.position = Vector3{ node->translation[0], node->translation[1], node->translation[2] };
-    sceneNode->Transform.rotation = Quaternion{ node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3] };
-    sceneNode->Transform.scale = Vector3{ node->scale[0], node->scale[1], node->scale[2] };
+
+	sceneNode->Transform.position = Vector3{ node->translation[0], node->translation[1], node->translation[2] };
+	sceneNode->Transform.rotation = Quaternion{ node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3] };
+	sceneNode->Transform.scale = Vector3{ node->scale[0], node->scale[1], node->scale[2] };
+
+	cgltf_float worldTransform[16];
+	cgltf_node_transform_world(node, worldTransform);
+
+    sceneNode->WorldMatrix = {
+		worldTransform[0], worldTransform[4], worldTransform[8], worldTransform[12],
+		worldTransform[1], worldTransform[5], worldTransform[9], worldTransform[13],
+		worldTransform[2], worldTransform[6], worldTransform[10], worldTransform[14],
+		worldTransform[3], worldTransform[7], worldTransform[11], worldTransform[15]
+	};
 
     for (size_t i = 0; i < node->children_count; i++)
     {
-        std::unique_ptr<SceneObject> childNode = LoadNodeGLTF(node->children[i], data);
+        std::unique_ptr<SceneObject> childNode = LoadNodeGLTF(node->children[i], data, outScene);
         childNode->Parent = sceneNode.get();
         sceneNode->Children.push_back(std::move(childNode));
-
-        childNode->CacheTransform();
     }
 
     return sceneNode;
@@ -86,7 +141,7 @@ bool LoadSceneFromGLTF(std::string_view filename, Scene& outScene)
         {
             for (size_t i = 0; i < data->scene->nodes_count; i++)
             {
-                LoadNodeGLTF(data->scene->nodes[i], data);
+                outScene.RootObjects.emplace_back(std::move(LoadNodeGLTF(data->scene->nodes[i], data, outScene)));
             }
         }
 

@@ -73,7 +73,19 @@ struct CameraSceneObject : public SceneObject
 struct LightSceneObject : public SceneObject
 {
     Color EmissiveColor = WHITE;
-    float Falloff = 100.0f;
+    float Intensity = 1.0f;
+    float Range = 100.0f;
+    float MinCone = 0;
+    float MaxCone = 0;
+
+    enum class LightTypes
+    {
+        Point,
+		Directional,
+        Spot
+    };
+
+	LightTypes LightType = LightTypes::Point;
 
     LightSceneObject()
     {

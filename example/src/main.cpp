@@ -1,27 +1,3 @@
-/*
-Raylib example file.
-This is an example main file for a simple raylib project.
-Use this as a starting point or replace it with your code.
-
--- Copyright (c) 2020-2024 Jeffery Myers
---
---This software is provided "as-is", without any express or implied warranty. In no event
---will the authors be held liable for any damages arising from the use of this software.
-
---Permission is granted to anyone to use this software for any purpose, including commercial
---applications, and to alter it and redistribute it freely, subject to the following restrictions:
-
---  1. The origin of this software must not be misrepresented; you must not claim that you
---  wrote the original software. If you use this software in a product, an acknowledgment
---  in the product documentation would be appreciated but is not required.
---
---  2. Altered source versions must be plainly marked as such, and must not be misrepresented
---  as being the original software.
---
---  3. This notice may not be removed or altered from any source distribution.
-
-*/
-
 #include "raylib.h"
 #include "rlgl.h"
 #include "raymath.h"
@@ -32,7 +8,7 @@ Use this as a starting point or replace it with your code.
 Scene TestScene;
 
 Camera3D ViewCamera = { 0 };
-
+bool RegenerateTransforms = false;
 
 void GameInit()
 {
@@ -47,7 +23,16 @@ void GameInit()
     ViewCamera.target = { 0, 0, 0 };
     ViewCamera.position = { 0, 5, -10 };
 
-    LoadSceneFromGLTF("resources/optimzed.glb", TestScene);
+  //  LoadSceneFromGLTF("resources/normal.glb", TestScene);
+    LoadSceneFromGLTF("resources/optimzed_scene.glb", TestScene);
+
+    for (auto* camera : TestScene.Cameras)
+    {
+		ViewCamera.fovy = camera->FOV;
+	
+        ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
+		ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
+    }
 }
 
 void GameCleanup()
@@ -61,16 +46,57 @@ bool GameUpdate()
 {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         UpdateCamera(&ViewCamera, CAMERA_FIRST_PERSON);
+
+    RegenerateTransforms = false;
+
+    if (IsKeyPressed(KEY_F1))
+        RegenerateTransforms = true;
     return true;
 }
 
+
+
 void DrawNode(SceneObject* node)
 {
+    if (RegenerateTransforms)
+		node->CacheTransform();
+
     rlPushMatrix();
     rlMultMatrixf(MatrixToFloat(node->WorldMatrix));
 
-    DrawCube(Vector3Zeros, 1, 1, 1, PURPLE);
+    auto inverseScale = Vector3Invert(node->Transform.scale);
 
+	DrawLine3D(Vector3{ inverseScale.x,0,0 }, Vector3{ -inverseScale.x,0,0 }, RED);
+	DrawLine3D(Vector3{ 0,inverseScale.y,0 }, Vector3{ 0,-inverseScale.y,0 }, GREEN);
+	DrawLine3D(Vector3{ 0,0,inverseScale.z }, Vector3{ 0,0,-inverseScale.z }, BLUE);
+
+    switch (node->GetType())
+    {
+	case SceneObjectType::GenericObject:
+        break;
+
+    case SceneObjectType::MeshObject:
+	    break;
+
+    case SceneObjectType::LightObject:
+    {
+		LightSceneObject* light = dynamic_cast<LightSceneObject*>(node);
+        DrawSphereWires(Vector3Zeros, light->Intensity, 8, 8, light->EmissiveColor);
+        break;
+	}
+
+	case SceneObjectType::CameraObject:
+	{
+        rlRotatef(90, 1, 0, 0);
+		DrawCylinderWires(Vector3{0,-0.5f,0}, 0.25f,0.5F, 0.5f, 10, BLACK);
+        DrawCubeWires(Vector3{ 0,1.0f,0 }, 0.75f, 2, 1.5f, BLACK);
+        break;
+	}
+
+	default:
+		break;
+	}
+  
     rlPopMatrix();
 
     for (auto& child : node->Children)
@@ -85,10 +111,10 @@ void GameDraw()
     ClearBackground(DARKGRAY);
 
     BeginMode3D(ViewCamera);
-    DrawGrid(100, 1.0f);
+    DrawGrid(200, 1.0f);
 
-    DrawCube(Vector3Zeros, 1, 1, 1, RED);
-    DrawSphere(Vector3{ 0,2,0 }, 0.5f, BLUE);
+    DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
+	DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
 
     for (auto& node : TestScene.RootObjects)
         DrawNode(node.get());
