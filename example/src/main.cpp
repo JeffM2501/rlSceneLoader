@@ -54,8 +54,6 @@ bool GameUpdate()
     return true;
 }
 
-
-
 void DrawNode(SceneObject* node)
 {
     if (RegenerateTransforms)

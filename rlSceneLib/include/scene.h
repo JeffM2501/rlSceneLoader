@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <vector>
+#include <unordered_map>
 #include <string>
 
 enum class SceneObjectType
@@ -51,8 +52,13 @@ public:
 
 struct MeshSceneObject : public SceneObject
 {
-    std::shared_ptr<Mesh> MeshData = nullptr;
-    Material MaterialData = { 0 };
+    struct MeshInstanceData
+    {
+        Material MaterialData;
+        std::shared_ptr<Mesh> MeshData = nullptr;
+    };
+   
+    std::vector<MeshInstanceData> Meshes;
 
     MeshSceneObject()
     {
@@ -95,7 +101,7 @@ struct LightSceneObject : public SceneObject
 
 struct Scene
 {
-    std::vector<std::shared_ptr<Mesh>> Models;
+    std::unordered_map<size_t, std::shared_ptr<Mesh>> Models;
     std::vector<std::unique_ptr<SceneObject>> RootObjects;
 
     std::vector<CameraSceneObject*> Cameras;

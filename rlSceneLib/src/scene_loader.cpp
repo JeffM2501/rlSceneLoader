@@ -4,6 +4,8 @@
 #include "external/cgltf.h"
 
 #include <unordered_map>
+#include <cinttypes>
+#include <span>
 
 #define LOAD_ATTRIBUTE(accesor, numComp, srcType, dstPtr) LOAD_ATTRIBUTE_CAST(accesor, numComp, srcType, dstPtr, srcType)
 
@@ -39,6 +41,186 @@ static cgltf_result LoadFileGLTFCallback(const struct cgltf_memory_options* memo
 static void ReleaseFileGLTFCallback(const struct cgltf_memory_options* memoryOptions, const struct cgltf_file_options* fileOptions, void* data)
 {
     UnloadFileData((unsigned char*)data);
+}
+
+std::size_t GetAttributeBufferHash(cgltf_accessor* accesor)
+{
+    std::size_t hash = 2166136261U; // FNV_offset_basis
+
+	int n = 0; 
+	unsigned char* buffer = (unsigned char*)accesor->buffer_view->buffer->data + accesor->buffer_view->offset / sizeof(unsigned char) + accesor->offset / sizeof(unsigned char);
+	for (unsigned int k = 0; k < accesor->count; k++) 
+	{
+		for (int l = 0; l < 1; l++) 
+		{
+			hash ^= (unsigned char)buffer[n + l];
+			hash *= 16777619U; // FNV_prime
+		}
+		n += (int)(accesor->stride / sizeof(unsigned char));
+	}
+	return hash;
+}
+
+size_t GetMeshHash(cgltf_primitive* primitive)
+{
+	size_t hash = 0;
+
+	for (size_t j = 0; j < primitive->attributes_count; j++)
+	{
+		cgltf_attribute* attribute = &primitive->attributes[j];
+        hash ^= GetAttributeBufferHash(attribute->data);
+	}
+
+	if (primitive->indices)
+	{
+        hash ^= GetAttributeBufferHash(primitive->indices);
+	}
+
+	return hash;
+}
+
+template<class T, class F>
+void CopyBufferType(F* outBuffer, cgltf_accessor* data, int componentCount)
+{
+	T* temp = (T*)MemAlloc(data->count * componentCount * sizeof(T));
+	LOAD_ATTRIBUTE(data, componentCount, T, temp);
+
+	for (size_t t = 0; t < data->count * componentCount; t++)
+		outBuffer[t] = (F)temp[t];
+
+	RL_FREE(temp);
+}
+
+template<class T>
+void CopyBufferFloat(float* outBuffer, cgltf_accessor* data, int componentCount)
+{
+	CopyBufferFloat<T, float>(outBuffer, data, componentCount);
+}
+
+
+template<class T>
+bool ConvertBufferType(T* outBuffer, cgltf_accessor* data, int componentCount, float scale = 1.0f)
+{
+    switch (data->component_type)
+    {
+	case cgltf_component_type_r_8u:
+		CopyBufferType<uint8_t, T>(outBuffer, data, componentCount);
+		break;
+
+	case cgltf_component_type_r_8:
+        CopyBufferType<int8_t, T>(outBuffer, data, componentCount);
+		break;
+
+    case cgltf_component_type_r_16u:
+        CopyBufferType<uint16_t, T>(outBuffer, data, componentCount);
+        break;
+
+	case cgltf_component_type_r_16:
+        CopyBufferType<int16_t, T>(outBuffer, data, componentCount);
+		break;
+
+	case cgltf_component_type_r_32u:
+        CopyBufferType<uint32_t, T>(outBuffer, data, componentCount);
+		break;
+
+	case cgltf_component_type_r_32f:
+        CopyBufferType<float, T>(outBuffer, data, componentCount);
+		break;
+
+    default:
+        return false;
+    }
+
+    if (scale != 1.0f)
+    {
+        for (size_t i = 0; i < data->count * componentCount; i++)
+        {
+            outBuffer[i] *= scale;
+        }
+    }
+
+    return true;
+}
+
+std::shared_ptr<Mesh> CacheMesh(Scene& outScene, size_t hash, cgltf_primitive* primitive)
+{
+    std::shared_ptr<Mesh> newMesh = std::make_shared<Mesh>();
+
+    memset(newMesh.get(), 0, sizeof(Mesh));
+
+    for (size_t i = 0; i < primitive->attributes_count; i++)
+    {
+		cgltf_attribute* attribute = &primitive->attributes[i];
+
+        switch (attribute->type)
+        {
+        case cgltf_attribute_type_position:
+            newMesh->vertexCount = (int)attribute->data->count;
+            newMesh->vertices = (float*)MemAlloc(newMesh->vertexCount * 3 * sizeof(float));
+            ConvertBufferType<float>(newMesh->vertices, attribute->data, 3);
+            break;
+
+        case cgltf_attribute_type_normal:
+            newMesh->normals = (float*)MemAlloc((int)attribute->data->count * 3 * sizeof(float));
+            ConvertBufferType<float>(newMesh->normals, attribute->data, 3);
+            break;
+
+        case cgltf_attribute_type_texcoord:
+        {
+            float* ptr = (float*)MemAlloc((int)attribute->data->count * 2 * sizeof(float));
+            ConvertBufferType<float>(ptr, attribute->data, 2);
+
+            if (attribute->index == 1)
+                newMesh->texcoords2 = ptr;
+            else
+                newMesh->texcoords = ptr;
+        }
+        break;
+        }
+    }
+
+    newMesh->triangleCount = newMesh->vertexCount / 3;
+
+	if (primitive->indices && primitive->indices->buffer_view)
+	{
+		newMesh->indices = (uint16_t*)MemAlloc((int)primitive->indices->count * sizeof(uint16_t));
+
+		ConvertBufferType<uint16_t>(newMesh->indices, primitive->indices, 1);
+
+        newMesh->triangleCount = primitive->indices->count / 3;
+	}
+
+    outScene.Models.insert_or_assign(hash, newMesh);
+
+    return newMesh;
+}
+
+void LoadMesh(MeshSceneObject* mesh, cgltf_node* node, const cgltf_data* data, Scene& outScene)
+{
+    for (size_t i = 0; i < node->mesh->primitives_count; i++)
+    {
+        auto* prim = node->mesh->primitives + i;
+
+        if (prim->attributes_count == 0)
+            continue;
+
+		size_t meshHash = GetMeshHash(prim);
+
+        MeshSceneObject::MeshInstanceData meshInstance;
+        // read the material?
+
+        auto itr = outScene.Models.find(meshHash);
+        if (itr != outScene.Models.end())
+        {
+			meshInstance.MeshData = itr->second;
+        }
+        else
+        {
+			meshInstance.MeshData = CacheMesh(outScene, meshHash, prim);
+        }
+
+		mesh->Meshes.push_back(meshInstance);
+    }
 }
 
 std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* data, Scene& outScene)
@@ -84,6 +266,11 @@ std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* da
 	else if (node->mesh)
 	{
         sceneNode = std::make_unique<MeshSceneObject>();
+        MeshSceneObject* mesh = static_cast<MeshSceneObject*>(sceneNode.get());
+
+        LoadMesh(mesh, node, data, outScene);
+
+        outScene.Meshes.push_back(mesh);
 	}
     else
     {
