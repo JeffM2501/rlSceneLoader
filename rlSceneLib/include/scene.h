@@ -59,7 +59,7 @@ struct MeshSceneObject : public SceneObject
         Material MaterialData;
         std::shared_ptr<Mesh> MeshData = nullptr;
     };
-   
+
     std::vector<MeshInstanceData> Meshes;
 
     MeshSceneObject()
@@ -89,11 +89,11 @@ struct LightSceneObject : public SceneObject
     enum class LightTypes
     {
         Point,
-		Directional,
+        Directional,
         Spot
     };
 
-	LightTypes LightType = LightTypes::Point;
+    LightTypes LightType = LightTypes::Point;
 
     LightSceneObject()
     {
@@ -103,7 +103,8 @@ struct LightSceneObject : public SceneObject
 
 struct Scene
 {
-    std::unordered_map<size_t, std::shared_ptr<Mesh>> Models;
+    std::unordered_map<size_t, std::shared_ptr<Texture>> TextureCache;
+    std::unordered_map<size_t, std::shared_ptr<Mesh>> MeshCache;
     std::vector<std::unique_ptr<SceneObject>> RootObjects;
 
     std::vector<CameraSceneObject*> Cameras;

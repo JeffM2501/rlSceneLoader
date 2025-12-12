@@ -29,36 +29,36 @@ void GameInit()
 
     for (auto* camera : TestScene.Cameras)
     {
-		ViewCamera.fovy = camera->FOV;
-	
+        ViewCamera.fovy = camera->FOV;
+
         ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
-		ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
+        ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
     }
 
-    for (auto& [hash, mesh] : TestScene.Models)
+    for (auto& [hash, mesh] : TestScene.MeshCache)
     {
-		UploadMesh(mesh.get(), false);
+        UploadMesh(mesh.get(), false);
 
         if (mesh->vertices)
         {
             MemFree(mesh->vertices);
             mesh->vertices = nullptr;
         }
-		if (mesh->texcoords)
-		{
-			MemFree(mesh->texcoords);
-			mesh->texcoords = nullptr;
-		}
+        if (mesh->texcoords)
+        {
+            MemFree(mesh->texcoords);
+            mesh->texcoords = nullptr;
+        }
         if (mesh->normals)
         {
             MemFree(mesh->normals);
             mesh->normals = nullptr;
         }
-		if (mesh->colors)
-		{
-			MemFree(mesh->colors);
-			mesh->colors = nullptr;
-		}
+        if (mesh->colors)
+        {
+            MemFree(mesh->colors);
+            mesh->colors = nullptr;
+        }
     }
 
     DefaultMat = LoadMaterialDefault();
@@ -67,10 +67,15 @@ void GameInit()
 void GameCleanup()
 {
     // unload resources
-	for (auto& [hash, mesh] : TestScene.Models)
-	{
-		UnloadMesh(*mesh.get());
-	}
+    for (auto& [hash, mesh] : TestScene.MeshCache)
+    {
+        UnloadMesh(*mesh.get());
+    }
+
+    for (auto& [hash, texture] : TestScene.TextureCache)
+    {
+        UnloadTexture(*texture.get());
+    }
     CloseWindow();
 }
 
@@ -78,21 +83,21 @@ bool GameUpdate()
 {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
     {
-		Vector3 movement = { 0 };
+        Vector3 movement = { 0 };
         if (IsKeyDown(KEY_W))
-			movement.x += 1.0f;
-		if (IsKeyDown(KEY_S))
-			movement.x -= 1.0f;
+            movement.x += 1.0f;
+        if (IsKeyDown(KEY_S))
+            movement.x -= 1.0f;
 
-		if (IsKeyDown(KEY_D))
-			movement.y += 1.0f;
-		if (IsKeyDown(KEY_A))
-			movement.y -= 1.0f;
+        if (IsKeyDown(KEY_D))
+            movement.y += 1.0f;
+        if (IsKeyDown(KEY_A))
+            movement.y -= 1.0f;
 
-		if (IsKeyDown(KEY_Q))
-			movement.z -= 1.0f;
-		if (IsKeyDown(KEY_E))
-			movement.z += 1.0f;
+        if (IsKeyDown(KEY_Q))
+            movement.z -= 1.0f;
+        if (IsKeyDown(KEY_E))
+            movement.z += 1.0f;
 
         float speed = 10;
         if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
@@ -101,16 +106,16 @@ bool GameUpdate()
         movement *= GetFrameTime() * speed;
 
         Vector3 rotation = { 0 };
-		rotation.x = GetMouseDelta().x;
-		rotation.y = GetMouseDelta().y;
+        rotation.x = GetMouseDelta().x;
+        rotation.y = GetMouseDelta().y;
 
         rotation *= 0.1f;
 
         float zoom = 0;
         if (GetMouseWheelMove() > 0)
             zoom = 1;
-		if (GetMouseWheelMove() < 0)
-			zoom = -1;
+        if (GetMouseWheelMove() < 0)
+            zoom = -1;
 
         UpdateCameraPro(&ViewCamera, movement, rotation, zoom);
     }
@@ -124,53 +129,53 @@ bool GameUpdate()
 void DrawNode(SceneObject* node)
 {
     if (RegenerateTransforms)
-		node->CacheTransform();
+        node->CacheTransform();
 
     rlPushMatrix();
     rlMultMatrixf(MatrixToFloat(node->WorldMatrix));
 
     auto inverseScale = Vector3Invert(node->Transform.scale);
 
-	DrawLine3D(Vector3{ inverseScale.x,0,0 }, Vector3{ -inverseScale.x,0,0 }, RED);
-	DrawLine3D(Vector3{ 0,inverseScale.y,0 }, Vector3{ 0,-inverseScale.y,0 }, GREEN);
-	DrawLine3D(Vector3{ 0,0,inverseScale.z }, Vector3{ 0,0,-inverseScale.z }, BLUE);
+    DrawLine3D(Vector3{ inverseScale.x,0,0 }, Vector3{ -inverseScale.x,0,0 }, RED);
+    DrawLine3D(Vector3{ 0,inverseScale.y,0 }, Vector3{ 0,-inverseScale.y,0 }, GREEN);
+    DrawLine3D(Vector3{ 0,0,inverseScale.z }, Vector3{ 0,0,-inverseScale.z }, BLUE);
 
     switch (node->GetType())
     {
-	case SceneObjectType::GenericObject:
+    case SceneObjectType::GenericObject:
         break;
 
     case SceneObjectType::MeshObject:
-	{
+    {
         MeshSceneObject* mesh = dynamic_cast<MeshSceneObject*>(node);
 
         for (auto& subMesh : mesh->Meshes)
-		{
-			DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
+        {
+            DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
         }
 
         DrawBoundingBox(mesh->Bounds, GREEN);
-       
+
         break;
     }
 
     case SceneObjectType::LightObject:
     {
-		LightSceneObject* light = dynamic_cast<LightSceneObject*>(node);
+        LightSceneObject* light = dynamic_cast<LightSceneObject*>(node);
         switch (light->LightType)
         {
-		case LightSceneObject::LightTypes::Directional:
-		//	rlRotatef(-45, 1, 0, 0);
-			DrawCylinderWires(Vector3{ 0,-1.0f, 0 }, 0.1f, 2.0f, 0.5F, 10, light->EmissiveColor);
-			break;
+        case LightSceneObject::LightTypes::Directional:
+            //	rlRotatef(-45, 1, 0, 0);
+            DrawCylinderWires(Vector3{ 0,-1.0f, 0 }, 0.1f, 2.0f, 0.5F, 10, light->EmissiveColor);
+            break;
 
-		case LightSceneObject::LightTypes::Spot:
-	      //  rlRotatef(90, 1, 0, 0);
-			DrawCylinderWires(Vector3{ 0,-light->Range,0 }, 0.0f, 0.125f, light->Range * tanf(light->MaxCone), light->Range, light->EmissiveColor);
-			break;
+        case LightSceneObject::LightTypes::Spot:
+            rlRotatef(90, 1, 0, 0);
+            DrawCylinderWires(Vector3{ 0,-light->Range, 0 }, 0.125f, light->Range * tanf(light->MaxCone), light->Range, 12, light->EmissiveColor);
+            break;
 
-		case LightSceneObject::LightTypes::Point:
-			rlRotatef(90, 1, 0, 0);
+        case LightSceneObject::LightTypes::Point:
+            rlRotatef(90, 1, 0, 0);
             DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
             DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
             break;
@@ -178,22 +183,22 @@ void DrawNode(SceneObject* node)
         default:
             break;
         }
-       
-        break;
-	}
 
-	case SceneObjectType::CameraObject:
-	{
+        break;
+    }
+
+    case SceneObjectType::CameraObject:
+    {
         rlRotatef(90, 1, 0, 0);
-		DrawCylinderWires(Vector3{0,-0.5f,0}, 0.25f,0.5F, 0.5f, 10, BLACK);
+        DrawCylinderWires(Vector3{ 0,-0.5f,0 }, 0.25f, 0.5F, 0.5f, 10, BLACK);
         DrawCubeWires(Vector3{ 0,1.0f,0 }, 0.75f, 2, 1.0f, BLACK);
         break;
-	}
+    }
 
-	default:
-		break;
-	}
-  
+    default:
+        break;
+    }
+
     rlPopMatrix();
 
     for (auto& child : node->Children)
@@ -211,16 +216,15 @@ void GameDraw()
     DrawGrid(200, 1.0f);
 
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
-	DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
+    DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
 
-	for (auto& node : TestScene.RootObjects)
-         DrawNode(node.get());
+    for (auto& node : TestScene.RootObjects)
+        DrawNode(node.get());
 
     EndMode3D();
 
-
     DrawFPS(5, 0);
-    DrawText(TextFormat("Unique Meshes %d", TestScene.Models.size()), 5, 20, 20, BLACK);
+    DrawText(TextFormat("Unique Meshes %d", TestScene.MeshCache.size()), 5, 20, 20, BLACK);
     DrawText(TextFormat("Mesh Nodes %d", TestScene.Meshes.size()), 5, 40, 20, BLACK);
     EndDrawing();
 }
