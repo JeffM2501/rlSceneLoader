@@ -10,6 +10,8 @@ Scene TestScene;
 Camera3D ViewCamera = { 0 };
 bool RegenerateTransforms = false;
 
+Material DefaultMat = { 0 };
+
 void GameInit()
 {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
@@ -23,8 +25,7 @@ void GameInit()
     ViewCamera.target = { 0, 0, 0 };
     ViewCamera.position = { 0, 5, -10 };
 
-  //  LoadSceneFromGLTF("resources/normal.glb", TestScene);
-    LoadSceneFromGLTF("resources/optimzed_scene.glb", TestScene);
+    LoadSceneFromGLTF("resources/normal.glb", TestScene);
 
     for (auto* camera : TestScene.Cameras)
     {
@@ -33,20 +34,86 @@ void GameInit()
         ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
 		ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
     }
+
+    for (auto& [hash, mesh] : TestScene.Models)
+    {
+		UploadMesh(mesh.get(), false);
+
+        if (mesh->vertices)
+        {
+            MemFree(mesh->vertices);
+            mesh->vertices = nullptr;
+        }
+		if (mesh->texcoords)
+		{
+			MemFree(mesh->texcoords);
+			mesh->texcoords = nullptr;
+		}
+        if (mesh->normals)
+        {
+            MemFree(mesh->normals);
+            mesh->normals = nullptr;
+        }
+		if (mesh->colors)
+		{
+			MemFree(mesh->colors);
+			mesh->colors = nullptr;
+		}
+    }
+
+    DefaultMat = LoadMaterialDefault();
 }
 
 void GameCleanup()
 {
     // unload resources
-
+	for (auto& [hash, mesh] : TestScene.Models)
+	{
+		UnloadMesh(*mesh.get());
+	}
     CloseWindow();
 }
 
 bool GameUpdate()
 {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
-        UpdateCamera(&ViewCamera, CAMERA_FIRST_PERSON);
+    {
+		Vector3 movement = { 0 };
+        if (IsKeyDown(KEY_W))
+			movement.x += 1.0f;
+		if (IsKeyDown(KEY_S))
+			movement.x -= 1.0f;
 
+		if (IsKeyDown(KEY_D))
+			movement.y += 1.0f;
+		if (IsKeyDown(KEY_A))
+			movement.y -= 1.0f;
+
+		if (IsKeyDown(KEY_Q))
+			movement.z -= 1.0f;
+		if (IsKeyDown(KEY_E))
+			movement.z += 1.0f;
+
+        float speed = 10;
+        if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
+            speed *= 5;
+
+        movement *= GetFrameTime() * speed;
+
+        Vector3 rotation = { 0 };
+		rotation.x = GetMouseDelta().x;
+		rotation.y = GetMouseDelta().y;
+
+        rotation *= 0.1f;
+
+        float zoom = 0;
+        if (GetMouseWheelMove() > 0)
+            zoom = 1;
+		if (GetMouseWheelMove() < 0)
+			zoom = -1;
+
+        UpdateCameraPro(&ViewCamera, movement, rotation, zoom);
+    }
     RegenerateTransforms = false;
 
     if (IsKeyPressed(KEY_F1))
@@ -74,12 +141,44 @@ void DrawNode(SceneObject* node)
         break;
 
     case SceneObjectType::MeshObject:
-	    break;
+	{
+        MeshSceneObject* mesh = dynamic_cast<MeshSceneObject*>(node);
+
+        for (auto& subMesh : mesh->Meshes)
+		{
+			DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
+        }
+
+        DrawBoundingBox(mesh->Bounds, GREEN);
+       
+        break;
+    }
 
     case SceneObjectType::LightObject:
     {
 		LightSceneObject* light = dynamic_cast<LightSceneObject*>(node);
-        DrawSphereWires(Vector3Zeros, light->Intensity, 8, 8, light->EmissiveColor);
+        switch (light->LightType)
+        {
+		case LightSceneObject::LightTypes::Directional:
+		//	rlRotatef(-45, 1, 0, 0);
+			DrawCylinderWires(Vector3{ 0,-1.0f, 0 }, 0.1f, 2.0f, 0.5F, 10, light->EmissiveColor);
+			break;
+
+		case LightSceneObject::LightTypes::Spot:
+	      //  rlRotatef(90, 1, 0, 0);
+			DrawCylinderWires(Vector3{ 0,-light->Range,0 }, 0.0f, 0.125f, light->Range * tanf(light->MaxCone), light->Range, light->EmissiveColor);
+			break;
+
+		case LightSceneObject::LightTypes::Point:
+			rlRotatef(90, 1, 0, 0);
+            DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
+            DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
+            break;
+
+        default:
+            break;
+        }
+       
         break;
 	}
 
@@ -87,7 +186,7 @@ void DrawNode(SceneObject* node)
 	{
         rlRotatef(90, 1, 0, 0);
 		DrawCylinderWires(Vector3{0,-0.5f,0}, 0.25f,0.5F, 0.5f, 10, BLACK);
-        DrawCubeWires(Vector3{ 0,1.0f,0 }, 0.75f, 2, 1.5f, BLACK);
+        DrawCubeWires(Vector3{ 0,1.0f,0 }, 0.75f, 2, 1.0f, BLACK);
         break;
 	}
 
@@ -114,11 +213,15 @@ void GameDraw()
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
 	DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
 
-    for (auto& node : TestScene.RootObjects)
-        DrawNode(node.get());
+	for (auto& node : TestScene.RootObjects)
+         DrawNode(node.get());
 
     EndMode3D();
 
+
+    DrawFPS(5, 0);
+    DrawText(TextFormat("Unique Meshes %d", TestScene.Models.size()), 5, 20, 20, BLACK);
+    DrawText(TextFormat("Mesh Nodes %d", TestScene.Meshes.size()), 5, 40, 20, BLACK);
     EndDrawing();
 }
 

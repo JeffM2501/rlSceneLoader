@@ -52,6 +52,8 @@ public:
 
 struct MeshSceneObject : public SceneObject
 {
+    BoundingBox Bounds = { 0 };
+
     struct MeshInstanceData
     {
         Material MaterialData;

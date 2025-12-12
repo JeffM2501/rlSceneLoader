@@ -82,7 +82,7 @@ size_t GetMeshHash(cgltf_primitive* primitive)
 template<class T, class F>
 void CopyBufferType(F* outBuffer, cgltf_accessor* data, int componentCount)
 {
-	T* temp = (T*)MemAlloc(data->count * componentCount * sizeof(T));
+	T* temp = (T*)MemAlloc(int(data->count * componentCount * sizeof(T)));
 	LOAD_ATTRIBUTE(data, componentCount, T, temp);
 
 	for (size_t t = 0; t < data->count * componentCount; t++)
@@ -96,7 +96,6 @@ void CopyBufferFloat(float* outBuffer, cgltf_accessor* data, int componentCount)
 {
 	CopyBufferFloat<T, float>(outBuffer, data, componentCount);
 }
-
 
 template<class T>
 bool ConvertBufferType(T* outBuffer, cgltf_accessor* data, int componentCount, float scale = 1.0f)
@@ -183,16 +182,53 @@ std::shared_ptr<Mesh> CacheMesh(Scene& outScene, size_t hash, cgltf_primitive* p
 
 	if (primitive->indices && primitive->indices->buffer_view)
 	{
-		newMesh->indices = (uint16_t*)MemAlloc((int)primitive->indices->count * sizeof(uint16_t));
+        if (primitive->indices->count > std::numeric_limits<uint16_t>::max())
+        {
+            // todo. de-index the vertex data
+        }
+        else
+        {
+            newMesh->indices = (uint16_t*)MemAlloc((int)primitive->indices->count * sizeof(uint16_t));
 
-		ConvertBufferType<uint16_t>(newMesh->indices, primitive->indices, 1);
+            ConvertBufferType<uint16_t>(newMesh->indices, primitive->indices, 1);
 
-        newMesh->triangleCount = primitive->indices->count / 3;
+            newMesh->triangleCount = int(primitive->indices->count / 3);
+        }
 	}
 
     outScene.Models.insert_or_assign(hash, newMesh);
 
     return newMesh;
+}
+
+void LoadMaterial(Material& material, const cgltf_material& gltf_mat)
+{
+//	const char* texPath = GetDirectoryPath(fileName);
+
+	// Check glTF material flow: PBR metallic/roughness flow
+	// NOTE: Alternatively, materials can follow PBR specular/glossiness flow
+	if (gltf_mat.has_pbr_metallic_roughness)
+	{
+		material.maps[MATERIAL_MAP_ALBEDO].color.r = (unsigned char)(gltf_mat.pbr_metallic_roughness.base_color_factor[0] * 255);
+		material.maps[MATERIAL_MAP_ALBEDO].color.g = (unsigned char)(gltf_mat.pbr_metallic_roughness.base_color_factor[1] * 255);
+		material.maps[MATERIAL_MAP_ALBEDO].color.b = (unsigned char)(gltf_mat.pbr_metallic_roughness.base_color_factor[2] * 255);
+		material.maps[MATERIAL_MAP_ALBEDO].color.a = (unsigned char)(gltf_mat.pbr_metallic_roughness.base_color_factor[3] * 255);
+	}
+
+	// Other possible materials not supported by raylib pipeline:
+	// has_clearcoat, has_transmission, has_volume, has_ior, has specular, has_sheen
+}
+
+BoundingBox MergeBoundingBoxes(const BoundingBox& b1, const BoundingBox& b2)
+{
+	BoundingBox result;
+	result.min.x = fminf(b1.min.x, b2.min.x);
+	result.min.y = fminf(b1.min.y, b2.min.y);
+	result.min.z = fminf(b1.min.z, b2.min.z);
+	result.max.x = fmaxf(b1.max.x, b2.max.x);
+	result.max.y = fmaxf(b1.max.y, b2.max.y);
+	result.max.z = fmaxf(b1.max.z, b2.max.z);
+	return result;
 }
 
 void LoadMesh(MeshSceneObject* mesh, cgltf_node* node, const cgltf_data* data, Scene& outScene)
@@ -209,6 +245,13 @@ void LoadMesh(MeshSceneObject* mesh, cgltf_node* node, const cgltf_data* data, S
         MeshSceneObject::MeshInstanceData meshInstance;
         // read the material?
 
+        meshInstance.MaterialData = LoadMaterialDefault();
+        if (prim->material)
+        {
+            LoadMaterial(meshInstance.MaterialData, *prim->material);
+			//prim->material->has_pbr_metallic_roughness;
+        }
+
         auto itr = outScene.Models.find(meshHash);
         if (itr != outScene.Models.end())
         {
@@ -218,6 +261,13 @@ void LoadMesh(MeshSceneObject* mesh, cgltf_node* node, const cgltf_data* data, S
         {
 			meshInstance.MeshData = CacheMesh(outScene, meshHash, prim);
         }
+
+        auto bbox = GetMeshBoundingBox(*meshInstance.MeshData);
+
+        if (mesh->Meshes.empty())
+            mesh->Bounds = bbox;
+        else
+            mesh->Bounds = MergeBoundingBoxes(bbox, mesh->Bounds);
 
 		mesh->Meshes.push_back(meshInstance);
     }
@@ -256,6 +306,9 @@ std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* da
 		case cgltf_light_type_spot:
 			light->LightType = LightSceneObject::LightTypes::Spot;
 			light->Range = node->light->range;
+            if (light->Range == 0)
+                light->Range = 20;
+
 			light->MinCone = node->light->spot_inner_cone_angle;
 			light->MaxCone = node->light->spot_outer_cone_angle;
             break;
