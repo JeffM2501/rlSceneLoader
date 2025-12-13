@@ -5,12 +5,17 @@
 #include "scene.h"  
 #include "scene_loader.h"
 
+#define RLIGHTS_IMPLEMENTATION
+#include "rlights.h"
+
 Scene TestScene;
 
 Camera3D ViewCamera = { 0 };
 bool RegenerateTransforms = false;
 
 Material DefaultMat = { 0 };
+
+Shader LightShader = { 0 };
 
 void GameInit()
 {
@@ -25,14 +30,73 @@ void GameInit()
     ViewCamera.target = { 0, 0, 0 };
     ViewCamera.position = { 0, 5, -10 };
 
-    LoadSceneFromGLTF("resources/normal.glb", TestScene);
+    LightShader = LoadShader("resources/lighting.vs", "resources/lighting.fs");
 
-    for (auto* camera : TestScene.Cameras)
+    LightShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(LightShader, "viewPos");
+	// NOTE: "matModel" location name is automatically assigned on shader loading,
+	// no need to get the location again if using that uniform name
+	//shader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(shader, "matModel");
+
+	// Ambient light level (some basic lighting)
+	int ambientLoc = GetShaderLocation(LightShader, "ambient");
+
+    float ambient[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
+	SetShaderValue(LightShader, ambientLoc, ambient, SHADER_UNIFORM_VEC4);
+    
+    //LoadSceneFromGLTF("resources/normal.glb", TestScene);
+
+ 
+    LoadSceneFromGLTF("resources/bigglb.glb", TestScene);
+
+	for (auto* camera : TestScene.Cameras)
+	{
+		ViewCamera.fovy = camera->FOV;
+
+		ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
+		ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
+	}
+
+    for (auto& meshNode : TestScene.Meshes)
     {
-        ViewCamera.fovy = camera->FOV;
+        for (auto& subMesh : meshNode->Meshes)
+		{
+            subMesh.MaterialData.shader = LightShader;
+		}
+    }
 
-        ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
-        ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
+	int lightCount = 0;
+	for (auto& lightNode : TestScene.Lights)
+	{
+		if (lightCount < 4)
+		{
+ 			int lightType = LIGHT_POINT;
+ 			switch (lightNode->LightType)
+ 			{
+ 			case LightSceneObject::LightTypes::Directional:
+ 				lightType = LIGHT_DIRECTIONAL;
+ 				break;
+ 			case LightSceneObject::LightTypes::Spot:
+ 				lightType = LIGHT_POINT;
+ 				break;
+ 			case LightSceneObject::LightTypes::Point:
+ 				lightType = LIGHT_POINT;
+ 				break;
+ 			default:
+ 				lightType = LIGHT_POINT;
+ 				break;
+ 			}
+
+			Vector3 lightPos = Vector3Transform(Vector3Zeros, lightNode->WorldMatrix);
+			Vector3 lightTarget = Vector3Transform(Vector3UnitZ, lightNode->WorldMatrix);
+		    CreateLight(lightType, lightPos, lightTarget, lightNode->EmissiveColor, LightShader);
+		}
+
+		lightCount++;
+	}
+
+    if (lightCount == 0)
+    {
+		CreateLight(LIGHT_DIRECTIONAL, Vector3{ -2, 1, -2 }, Vector3Zeros, WHITE, LightShader);
     }
 
     for (auto& [hash, mesh] : TestScene.MeshCache)
@@ -119,6 +183,9 @@ bool GameUpdate()
 
         UpdateCameraPro(&ViewCamera, movement, rotation, zoom);
     }
+	float cameraPos[3] = { ViewCamera.position.x, ViewCamera.position.y, ViewCamera.position.z };
+	SetShaderValue(LightShader, LightShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+
     RegenerateTransforms = false;
 
     if (IsKeyPressed(KEY_F1))
