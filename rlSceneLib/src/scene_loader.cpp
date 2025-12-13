@@ -24,7 +24,7 @@ static Image LoadImageFromCgltfImage(cgltf_image* cgltfImage, const char* texPat
 
     if ((cgltfImage->buffer_view != NULL) && (cgltfImage->buffer_view->buffer->data != NULL))    // Check if image is provided as data buffer
     {
-        unsigned char* data = (unsigned char*)MemAlloc(cgltfImage->buffer_view->size);
+        unsigned char* data = (unsigned char*)MemAlloc(uint32_t(cgltfImage->buffer_view->size));
         int offset = (int)cgltfImage->buffer_view->offset;
         int stride = (int)cgltfImage->buffer_view->stride ? (int)cgltfImage->buffer_view->stride : 1;
 
@@ -251,7 +251,7 @@ std::shared_ptr<Mesh> CacheMesh(Scene& outScene, size_t hash, cgltf_primitive* p
     return newMesh;
 }
 
-void LoadMaterial(Material& material, const cgltf_material& gltf_mat)
+void LoadMaterial(Material& material, const cgltf_material& gltf_mat, Scene& outScene)
 {
     //	const char* texPath = GetDirectoryPath(fileName);
 
@@ -266,10 +266,31 @@ void LoadMaterial(Material& material, const cgltf_material& gltf_mat)
 
         if (gltf_mat.pbr_metallic_roughness.base_color_texture.texture)
         {
+            std::string name;
+            if (gltf_mat.pbr_metallic_roughness.base_color_texture.texture->name)
+            {
+                name = gltf_mat.pbr_metallic_roughness.base_color_texture.texture->name;
+            }
+            else
+            {
+                name = TextFormat("%p", gltf_mat.pbr_metallic_roughness.base_color_texture.texture);
+            }
+
+            std::hash<std::string> hasher;
+            size_t texHash = hasher(name);
+
+            auto itr = outScene.TextureCache.find(texHash);
+            if (itr != outScene.TextureCache.end())
+            {
+                material.maps[MATERIAL_MAP_ALBEDO].texture = itr->second;
+                return;
+            }
+
             Image imAlbedo = LoadImageFromCgltfImage(gltf_mat.pbr_metallic_roughness.base_color_texture.texture->image, "");
             if (imAlbedo.data != NULL)
             {
                 material.maps[MATERIAL_MAP_ALBEDO].texture = LoadTextureFromImage(imAlbedo);
+                outScene.TextureCache[texHash] = material.maps[MATERIAL_MAP_ALBEDO].texture;
                 UnloadImage(imAlbedo);
             }
         }
@@ -308,7 +329,7 @@ void LoadMesh(MeshSceneObject* mesh, cgltf_node* node, const cgltf_data* data, S
         meshInstance.MaterialData = LoadMaterialDefault();
         if (prim->material)
         {
-            LoadMaterial(meshInstance.MaterialData, *prim->material);
+            LoadMaterial(meshInstance.MaterialData, *prim->material, outScene);
             //prim->material->has_pbr_metallic_roughness;
         }
 

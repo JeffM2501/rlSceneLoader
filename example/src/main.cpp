@@ -46,7 +46,7 @@ void GameInit()
     //LoadSceneFromGLTF("resources/normal.glb", TestScene);
 
  
-    LoadSceneFromGLTF("resources/bigglb.glb", TestScene);
+    LoadSceneFromGLTF("resources/DungeonScene.glb", TestScene);
 
 	for (auto* camera : TestScene.Cameras)
 	{
@@ -138,7 +138,7 @@ void GameCleanup()
 
     for (auto& [hash, texture] : TestScene.TextureCache)
     {
-        UnloadTexture(*texture.get());
+        UnloadTexture(texture);
     }
     CloseWindow();
 }

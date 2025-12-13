@@ -103,7 +103,7 @@ struct LightSceneObject : public SceneObject
 
 struct Scene
 {
-    std::unordered_map<size_t, std::shared_ptr<Texture>> TextureCache;
+    std::unordered_map<size_t, Texture> TextureCache;
     std::unordered_map<size_t, std::shared_ptr<Mesh>> MeshCache;
     std::vector<std::unique_ptr<SceneObject>> RootObjects;
 
