@@ -267,9 +267,9 @@ void LoadMaterial(Material& material, const cgltf_material& gltf_mat, Scene& out
         if (gltf_mat.pbr_metallic_roughness.base_color_texture.texture)
         {
             std::string name;
-            if (gltf_mat.pbr_metallic_roughness.base_color_texture.texture->name)
+            if (gltf_mat.pbr_metallic_roughness.base_color_texture.texture->image->name)
             {
-                name = gltf_mat.pbr_metallic_roughness.base_color_texture.texture->name;
+                name = gltf_mat.pbr_metallic_roughness.base_color_texture.texture->image->name;
             }
             else
             {
@@ -409,6 +409,7 @@ std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* da
     else
     {
         sceneNode = std::make_unique<SceneObject>();
+
     }
 
     sceneNode->Name = node->name ? node->name : "";

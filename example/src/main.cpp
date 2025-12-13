@@ -216,10 +216,10 @@ void DrawNode(SceneObject* node)
     {
         MeshSceneObject* mesh = dynamic_cast<MeshSceneObject*>(node);
 
-        for (auto& subMesh : mesh->Meshes)
-        {
-            DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
-        }
+//         for (auto& subMesh : mesh->Meshes)
+//         {
+//             DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
+//         }
 
         DrawBoundingBox(mesh->Bounds, GREEN);
 
@@ -245,6 +245,8 @@ void DrawNode(SceneObject* node)
             rlRotatef(90, 1, 0, 0);
             DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
             DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
+
+            DrawSphereWires(Vector3Zeros, light->Range, 8,8, ColorAlpha(light->EmissiveColor, 0.25f));
             break;
 
         default:
@@ -285,8 +287,20 @@ void GameDraw()
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
     DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
 
+    // draw the meshes
+    for (auto& meshNode : TestScene.Meshes)
+    {
+        for (auto& subMesh : meshNode->Meshes)
+        {
+            DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, meshNode->WorldMatrix);
+        }
+    }
+    rlDrawRenderBatchActive();
+ //   rlDisableDepthTest();
     for (auto& node : TestScene.RootObjects)
         DrawNode(node.get());
+    rlDrawRenderBatchActive();
+   // rlEnableDepthTest();
 
     EndMode3D();
 
