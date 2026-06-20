@@ -48,6 +48,9 @@ public:
     virtual ~SceneObject() = default;
 
     void CacheTransform();
+
+    virtual bool IsRenderable() const { return false; }
+    virtual const BoundingBox* GetBoundingBox() const { return nullptr; }
 };
 
 struct MeshSceneObject : public SceneObject
@@ -66,6 +69,9 @@ struct MeshSceneObject : public SceneObject
     {
         Type = SceneObjectType::MeshObject;
     }
+
+    bool IsRenderable() const override { return true; }
+    const BoundingBox* GetBoundingBox() const override { return &Bounds; }
 };
 
 struct CameraSceneObject : public SceneObject

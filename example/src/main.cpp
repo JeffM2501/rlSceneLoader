@@ -5,10 +5,13 @@
 #include "scene.h"  
 #include "scene_loader.h"
 
+#include "scene_graph.h"
+
 #define RLIGHTS_IMPLEMENTATION
 #include "rlights.h"
 
 Scene TestScene;
+BruteForceSceneGraph Graph(TestScene);
 
 Camera3D ViewCamera = { 0 };
 bool RegenerateTransforms = false;
@@ -287,9 +290,15 @@ void GameDraw()
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
     DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
 
+
+    std::vector<SceneObject*> renderableObjects;
+    Graph.Query(ViewCamera, renderableObjects);
+    //Graph.Query(ViewCamera.position, 20, renderableObjects);
     // draw the meshes
-    for (auto& meshNode : TestScene.Meshes)
+    for (auto& node : renderableObjects)
     {
+        MeshSceneObject* meshNode = dynamic_cast<MeshSceneObject*>(node);
+
         for (auto& subMesh : meshNode->Meshes)
         {
             DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, meshNode->WorldMatrix);
@@ -307,6 +316,7 @@ void GameDraw()
     DrawFPS(5, 0);
     DrawText(TextFormat("Unique Meshes %d", TestScene.MeshCache.size()), 5, 20, 20, BLACK);
     DrawText(TextFormat("Mesh Nodes %d", TestScene.Meshes.size()), 5, 40, 20, BLACK);
+    DrawText(TextFormat("Drawn Nodes %d", renderableObjects.size()), 5, 60, 20, BLACK);
     EndDrawing();
 }
 

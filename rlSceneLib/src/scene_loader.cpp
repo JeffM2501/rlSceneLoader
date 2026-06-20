@@ -88,7 +88,8 @@ static cgltf_result LoadFileGLTFCallback(const struct cgltf_memory_options* memo
 }
 
 // Release file data callback for cgltf
-static void ReleaseFileGLTFCallback(const struct cgltf_memory_options* memoryOptions, const struct cgltf_file_options* fileOptions, void* data)
+
+static void ReleaseFileGLTFCallback(const struct cgltf_memory_options* memory_options, const struct cgltf_file_options* file_options, void* data, cgltf_size size)
 {
     UnloadFileData((unsigned char*)data);
 }

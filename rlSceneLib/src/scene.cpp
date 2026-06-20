@@ -1,6 +1,4 @@
-
 #include "scene.h"
-
 
 void PQSTransformToMatrix(const PQSTransform& transform, Matrix& out_matrix)
 {
