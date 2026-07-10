@@ -1,137 +1,150 @@
 #include "frustum_collision.h"
+#include "rlgl.h"
 #include <cmath>
 
-// Helper function to get a point on the bounding box that is furthest in a given direction
-Vector3 GetBoxFurthestPoint(const BoundingBox& box, const Vector3& direction)
+void ViewCamera::SetPlanes(float near, float far)
 {
-    Vector3 result = box.min;
-
-    if (direction.x > 0)
-        result.x = box.max.x;
-
-    if (direction.y > 0)
-        result.y = box.max.y;
-
-    if (direction.z > 0)
-        result.z = box.max.z;
-
-    return result;
+    NearPlaneDistance = near;
+    FarPlaneDistance = far;
+    rlSetClipPlanes(near, far);
 }
 
-// Helper function to get a point on the bounding box that is closest in a given direction
-Vector3 GetBoxClosestPoint(const BoundingBox& box, const Vector3& direction)
+bool ExtractFrustumPlanes(ViewCamera& camera)
 {
-    Vector3 result = box.max;
+    float aspectRatio = (float)GetScreenWidth() / (float)GetScreenHeight();
 
-    if (direction.x > 0) 
-        result.x = box.min.x;
-    else if (direction.x < 0) 
-        result.x = box.max.x;
+    // Calculate camera orientation vectors
+    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.Camera.target, camera.Camera.position));
+    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.Camera.up));
+    Vector3 up = Vector3CrossProduct(right, forward);
 
-    if (direction.y > 0) 
-        result.y = box.min.y;
-    else if (direction.y < 0) 
-        result.y = box.max.y;
-
-    if (direction.z > 0) 
-        result.z = box.min.z;
-    else if (direction.z < 0) 
-        result.z = box.max.z;
-
-    return result;
-}
-
-// Extract frustum planes from camera
-void GetFrustumPlanes(const Camera3D& camera, Plane planes[6])
-{
-    // Get camera vectors
-    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
-    Vector3 up = Vector3Normalize(Vector3CrossProduct(right, forward));
-
-    float fov_rad = camera.fovy * PI / 180.0f * 0.5f;
-    float tan_fov = std::tanf(fov_rad);
-
-    // Calculate aspect ratio (assuming standard 16:9, adjust as needed)
-    float aspect = float(GetScreenWidth()) / float(GetScreenHeight());
-
-    // Near and far planes
-    float near_dist = 0.1f;
-    float far_dist = 1000.0f;
-
-    Vector3 center = Vector3Add(camera.position, Vector3Scale(forward, near_dist));
+    // Calculate half heights and widths at near and far distances
+    float nearHeight = tanf(camera.Camera.fovy * 0.5f * DEG2RAD) * camera.NearPlaneDistance;
+    float nearWidth = nearHeight * aspectRatio;
+    float farHeight = tanf(camera.Camera.fovy * 0.5f * DEG2RAD) * camera.FarPlaneDistance;
+    float farWidth = farHeight * aspectRatio;
 
     // Near plane
-    planes[4].Normal = Vector3Negate(forward);
-    planes[4].Distance = Vector3DotProduct(planes[4].Normal, center);
+    camera.Frustum.Near.Normal = forward;
+    camera.Frustum.Near.Distance = Vector3DotProduct(forward, Vector3Add(camera.Camera.position, Vector3Scale(forward, camera.NearPlaneDistance)));
 
-    // Far plane
-    center = Vector3Add(camera.position, Vector3Scale(forward, far_dist));
-    planes[5].Normal = forward;
-    planes[5].Distance = Vector3DotProduct(planes[5].Normal, center);
+    // Far plane (normal points inward, toward camera)
+    camera.Frustum.Far.Normal = Vector3Negate(forward);
+    camera.Frustum.Far.Distance = Vector3DotProduct(Vector3Negate(forward), Vector3Add(camera.Camera.position, Vector3Scale(forward, camera.FarPlaneDistance)));
 
-    // Calculate frustum height and width at near plane
-    float near_height = 2.0f * near_dist * tan_fov;
-    float near_width = near_height * aspect;
+    // Calculate center points for near and far planes
+    Vector3 nearCenter = Vector3Add(camera.Camera.position, Vector3Scale(forward, camera.NearPlaneDistance));
+    Vector3 farCenter = Vector3Add(camera.Camera.position, Vector3Scale(forward, camera.FarPlaneDistance));
 
     // Left plane
-    Vector3 left_vec = Vector3Scale(right, -near_width * 0.5f);
-    Vector3 near_center = Vector3Add(camera.position, Vector3Scale(forward, near_dist));
-    Vector3 near_left = Vector3Add(near_center, left_vec);
-    Vector3 left_normal = Vector3CrossProduct(up, Vector3Subtract(near_left, camera.position));
-    planes[0].Normal = Vector3Normalize(left_normal);
-    planes[0].Distance = Vector3DotProduct(planes[0].Normal, camera.position);
+    Vector3 leftNearPoint = Vector3Add(nearCenter, Vector3Scale(right, -nearWidth));
+    Vector3 leftFarPoint = Vector3Add(farCenter, Vector3Scale(right, -farWidth));
+    Vector3 leftEdge = Vector3Normalize(Vector3Subtract(leftFarPoint, camera.Camera.position));
+    camera.Frustum.Left.Normal = Vector3Negate(Vector3Normalize(Vector3CrossProduct(up, leftEdge)));
+    camera.Frustum.Left.Distance = Vector3DotProduct(camera.Frustum.Left.Normal, camera.Camera.position);
 
     // Right plane
-    Vector3 right_vec = Vector3Scale(right, near_width * 0.5f);
-    Vector3 near_right = Vector3Add(near_center, right_vec);
-    Vector3 right_normal = Vector3CrossProduct(Vector3Subtract(near_right, camera.position), up);
-    planes[1].Normal = Vector3Normalize(right_normal);
-    planes[1].Distance = Vector3DotProduct(planes[1].Normal, camera.position);
-
+    Vector3 rightNearPoint = Vector3Add(nearCenter, Vector3Scale(right, nearWidth));
+    Vector3 rightFarPoint = Vector3Add(farCenter, Vector3Scale(right, farWidth));
+    Vector3 rightEdge = Vector3Normalize(Vector3Subtract(rightFarPoint, camera.Camera.position));
+    camera.Frustum.Right.Normal = Vector3Negate(Vector3Normalize(Vector3CrossProduct(rightEdge, up)));
+    camera.Frustum.Right.Distance = Vector3DotProduct(camera.Frustum.Right.Normal, camera.Camera.position);
     // Top plane
-    Vector3 top_vec = Vector3Scale(up, near_height * 0.5f);
-    Vector3 near_top = Vector3Add(near_center, top_vec);
-    Vector3 top_normal = Vector3CrossProduct(right, Vector3Subtract(near_top, camera.position));
-    planes[2].Normal = Vector3Normalize(top_normal);
-    planes[2].Distance = Vector3DotProduct(planes[2].Normal, camera.position);
+    Vector3 topNearPoint = Vector3Add(nearCenter, Vector3Scale(up, nearHeight));
+    Vector3 topFarPoint = Vector3Add(farCenter, Vector3Scale(up, farHeight));
+    Vector3 topEdge = Vector3Normalize(Vector3Subtract(topFarPoint, camera.Camera.position));
+    camera.Frustum.Top.Normal = Vector3Negate(Vector3Normalize(Vector3CrossProduct(right, topEdge)));
+    camera.Frustum.Top.Distance = Vector3DotProduct(camera.Frustum.Top.Normal, camera.Camera.position);
 
     // Bottom plane
-    Vector3 bottom_vec = Vector3Scale(up, -near_height * 0.5f);
-    Vector3 near_bottom = Vector3Add(near_center, bottom_vec);
-    Vector3 bottom_normal = Vector3CrossProduct(Vector3Subtract(near_bottom, camera.position), right);
-    planes[3].Normal = Vector3Normalize(bottom_normal);
-    planes[3].Distance = Vector3DotProduct(planes[3].Normal, camera.position);
+    Vector3 bottomNearPoint = Vector3Add(nearCenter, Vector3Scale(up, -nearHeight));
+    Vector3 bottomFarPoint = Vector3Add(farCenter, Vector3Scale(up, -farHeight));
+    Vector3 bottomEdge = Vector3Normalize(Vector3Subtract(bottomFarPoint, camera.Camera.position));
+    camera.Frustum.Bottom.Normal = Vector3Negate(Vector3Normalize(Vector3CrossProduct(bottomEdge, right)));
+    camera.Frustum.Bottom.Distance = Vector3DotProduct(camera.Frustum.Bottom.Normal, camera.Camera.position);
+
+    return true;
 }
 
-// Check if a bounding box is inside or intersects the camera frustum
-int CheckBoundingBoxFrustum(const BoundingBox& box, const Camera3D& camera)
+float GetSignedDistanceToPlane(const Plane& plane, const Vector3& point)
 {
-    Plane planes[6];
-    GetFrustumPlanes(camera, planes);
+    // Calculate signed distance: positive = in front of plane, negative = behind plane
+    return Vector3DotProduct(plane.Normal, point) - plane.Distance;
+}
+bool IsSphereInFrustum(const CameraFrustum& frustum, const Vector3& center, float radius)
+{
+    // Check sphere against all 6 frustum planes
+    // If the sphere is completely outside any plane, it's not in the frustum
 
-    bool allInside = true;
+    if (GetSignedDistanceToPlane(frustum.Near, center) < -radius)
+        return false;
 
-    // Test all 6 planes
-    for (int i = 0; i < 6; i++)
+    if (GetSignedDistanceToPlane(frustum.Far, center) < -radius)
+        return false;
+
+    if (GetSignedDistanceToPlane(frustum.Left, center) < -radius)
+        return false;
+
+    if (GetSignedDistanceToPlane(frustum.Right, center) < -radius)
+        return false;
+
+    if (GetSignedDistanceToPlane(frustum.Top, center) < -radius)
+        return false;
+
+    if (GetSignedDistanceToPlane(frustum.Bottom, center) < -radius)
+        return false;
+
+    // Sphere is at least partially inside the frustum
+    return true;
+}
+
+bool IsBoxInFrustum(const CameraFrustum& frustum, const BoundingBox& box, Matrix transform)
+{
+    // Get the 8 corners of the oriented box
+   // Vector3 halfSize = Vector3Scale(box.Size, 0.5f);
+
+    // Calculate local space corner offsets
+    Vector3 corners[8] =
     {
-        // Get the furthest point from the plane normal
-        Vector3 furthestPoint = GetBoxFurthestPoint(box, planes[i].Normal);
-        float furthestDist = Vector3DotProduct(furthestPoint, planes[i].Normal) - planes[i].Distance;
+        { box.min.x, box.min.y, box.min.z },
+        { box.max.x, box.min.y, box.min.z },
+        { box.min.x, box.max.y, box.min.z },
+        { box.max.x, box.max.y, box.min.z },
+        { box.min.x, box.min.y, box.max.z },
+        { box.max.x, box.min.y, box.max.z },
+        { box.min.x, box.max.y, box.max.z },
+        { box.max.x, box.max.y, box.max.z }
+    };
 
-        // If furthest point is behind the plane, box is completely outside
-        if (furthestDist < 0)
-            return -1; // Completely outside
-
-        // Get the closest point to the plane normal
-        Vector3 closestPoint = GetBoxClosestPoint(box, planes[i].Normal);
-        float closestDist = Vector3DotProduct(closestPoint, planes[i].Normal) - planes[i].Distance;
-
-        // If closest point is not fully inside, box is intersecting
-        if (closestDist < 0)
-            allInside = false;
+    for (int i = 0; i < 8; i++)
+    {
+        // Transform the corner to world space using the provided transform matrix
+        corners[i] = Vector3Transform(corners[i], transform);
     }
 
-    // If all points passed all plane tests
-    return allInside ? 1 : 0; // 1 = completely inside, 0 = partially inside/intersecting
+
+    // Test the box against each frustum plane
+    // For each plane, if all 8 corners are outside, the box is completely outside
+    Plane planes[6] = { frustum.Near, frustum.Far, frustum.Left, frustum.Right, frustum.Top, frustum.Bottom };
+
+    for (int p = 0; p < 6; p++)
+    {
+        int cornersOutside = 0;
+        for (int c = 0; c < 8; c++)
+        {
+            if (GetSignedDistanceToPlane(planes[p], corners[c]) < 0)
+            {
+                cornersOutside++;
+            }
+        }
+
+        // If all 8 corners are outside this plane, the box is not in the frustum
+        if (cornersOutside == 8)
+        {
+            return false;
+        }
+    }
+
+    // Box is at least partially inside the frustum
+    return true;
 }

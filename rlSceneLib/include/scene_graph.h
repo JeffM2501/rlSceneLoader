@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene.h"
+#include "frustum_collision.h"
 #include <vector>
 #include <functional>
 
@@ -15,7 +16,7 @@ public:
     SceneGraph(Scene& scene) : SceneData(scene) {}
     virtual size_t Query(const Vector3& center, float radius, ObjectPtrList& objectList) = 0;
     virtual size_t Query(const BoundingBox& boundingBox, ObjectPtrList& objectList) = 0;
-    virtual size_t Query(const Camera3D& camera, ObjectPtrList& objectList) = 0;
+    virtual size_t Query(ViewCamera& camera, ObjectPtrList& objectList) = 0;
 };
 
 class BruteForceSceneGraph : public SceneGraph
@@ -27,5 +28,5 @@ public:
 
     size_t Query(const Vector3& center, float radius, ObjectPtrList& objectList) override;
     size_t Query(const BoundingBox& boundingBox, ObjectPtrList& objectList) override;
-    size_t Query(const Camera3D& camera, ObjectPtrList& objectList) override;
+    size_t Query(ViewCamera& camera, ObjectPtrList& objectList) override;
 };

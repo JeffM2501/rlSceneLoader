@@ -6,6 +6,7 @@
 #include "scene_loader.h"
 
 #include "scene_graph.h"
+#include "frustum_collision.h"
 
 #define RLIGHTS_IMPLEMENTATION
 #include "rlights.h"
@@ -13,12 +14,25 @@
 Scene TestScene;
 BruteForceSceneGraph Graph(TestScene);
 
-Camera3D ViewCamera = { 0 };
+ViewCamera Cam;
+ViewCamera GameCam;
 bool RegenerateTransforms = false;
+
+bool UseGameCam = true;
 
 Material DefaultMat = { 0 };
 
 Shader LightShader = { 0 };
+
+ViewCamera& GetActiveCamera()
+{
+    return UseGameCam ? GameCam : Cam;
+}
+
+ViewCamera& GetAlternateCamera()
+{
+    return !UseGameCam ? GameCam : Cam;
+}
 
 void GameInit()
 {
@@ -28,10 +42,12 @@ void GameInit()
 
     // load resources
 
-    ViewCamera.fovy = 45.0f;
-    ViewCamera.up = { 0, 1, 0 };
-    ViewCamera.target = { 0, 0, 0 };
-    ViewCamera.position = { 0, 5, -10 };
+    Cam.Camera.fovy = 45.0f;
+    Cam.Camera.up = { 0, 1, 0 };
+    Cam.Camera.target = { 0, 0, 0 };
+    Cam.Camera.position = { 0, 5, -10 };
+
+    GameCam.Camera = Cam.Camera;
 
     LightShader = LoadShader("resources/lighting.vs", "resources/lighting.fs");
 
@@ -53,10 +69,10 @@ void GameInit()
 
 	for (auto* camera : TestScene.Cameras)
 	{
-		ViewCamera.fovy = camera->FOV;
+        GameCam.Camera.fovy = camera->FOV;
 
-		ViewCamera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
-		ViewCamera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - ViewCamera.position;
+        GameCam.Camera.position = Vector3Transform(Vector3Zeros, camera->WorldMatrix);
+        GameCam.Camera.target = Vector3Transform(Vector3UnitZ, camera->WorldMatrix) - GameCam.Camera.position;
 	}
 
     for (auto& meshNode : TestScene.Meshes)
@@ -148,45 +164,49 @@ void GameCleanup()
 
 bool GameUpdate()
 {
+    if (IsKeyPressed(KEY_TAB))
+        UseGameCam = !UseGameCam;
+
+    Vector3 movement = { 0 };
+    if (IsKeyDown(KEY_W))
+        movement.x += 1.0f;
+    if (IsKeyDown(KEY_S))
+        movement.x -= 1.0f;
+
+    if (IsKeyDown(KEY_D))
+        movement.y += 1.0f;
+    if (IsKeyDown(KEY_A))
+        movement.y -= 1.0f;
+
+    if (IsKeyDown(KEY_Q))
+        movement.z -= 1.0f;
+    if (IsKeyDown(KEY_E))
+        movement.z += 1.0f;
+
+    float speed = 10;
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
+        speed *= 5;
+
+    movement *= GetFrameTime() * speed;
+
+    Vector3 rotation = { 0 };
+    rotation.x = GetMouseDelta().x;
+    rotation.y = GetMouseDelta().y;
+
+    rotation *= 0.1f;
+
+    float zoom = 0;
+    if (GetMouseWheelMove() > 0)
+        zoom = 1;
+    if (GetMouseWheelMove() < 0)
+        zoom = -1;
+ 
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
-    {
-        Vector3 movement = { 0 };
-        if (IsKeyDown(KEY_W))
-            movement.x += 1.0f;
-        if (IsKeyDown(KEY_S))
-            movement.x -= 1.0f;
+        UpdateCameraPro(&GetActiveCamera().Camera, movement, rotation, zoom);
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_LEFT_SHIFT))
+        UpdateCameraPro(&GetAlternateCamera().Camera, movement, rotation, zoom);
 
-        if (IsKeyDown(KEY_D))
-            movement.y += 1.0f;
-        if (IsKeyDown(KEY_A))
-            movement.y -= 1.0f;
-
-        if (IsKeyDown(KEY_Q))
-            movement.z -= 1.0f;
-        if (IsKeyDown(KEY_E))
-            movement.z += 1.0f;
-
-        float speed = 10;
-        if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
-            speed *= 5;
-
-        movement *= GetFrameTime() * speed;
-
-        Vector3 rotation = { 0 };
-        rotation.x = GetMouseDelta().x;
-        rotation.y = GetMouseDelta().y;
-
-        rotation *= 0.1f;
-
-        float zoom = 0;
-        if (GetMouseWheelMove() > 0)
-            zoom = 1;
-        if (GetMouseWheelMove() < 0)
-            zoom = -1;
-
-        UpdateCameraPro(&ViewCamera, movement, rotation, zoom);
-    }
-	float cameraPos[3] = { ViewCamera.position.x, ViewCamera.position.y, ViewCamera.position.z };
+	float cameraPos[3] = { GetActiveCamera().Camera.position.x, GetActiveCamera().Camera.position.y, GetActiveCamera().Camera.position.z};
 	SetShaderValue(LightShader, LightShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
 
     RegenerateTransforms = false;
@@ -219,10 +239,10 @@ void DrawNode(SceneObject* node)
     {
         MeshSceneObject* mesh = dynamic_cast<MeshSceneObject*>(node);
 
-//         for (auto& subMesh : mesh->Meshes)
-//         {
-//             DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
-//         }
+        //         for (auto& subMesh : mesh->Meshes)
+        //         {
+        //             DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
+        //         }
 
         DrawBoundingBox(mesh->Bounds, GREEN);
 
@@ -249,7 +269,7 @@ void DrawNode(SceneObject* node)
             DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
             DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
 
-            DrawSphereWires(Vector3Zeros, light->Range, 8,8, ColorAlpha(light->EmissiveColor, 0.25f));
+            DrawSphereWires(Vector3Zeros, light->Range, 8, 8, ColorAlpha(light->EmissiveColor, 0.25f));
             break;
 
         default:
@@ -277,6 +297,102 @@ void DrawNode(SceneObject* node)
     {
         DrawNode(child.get());
     }
+
+}
+
+Quaternion QuaternionFromCamera(Camera3D camera)
+{
+    // Calculate camera's orientation vectors
+    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
+    Vector3 up = Vector3CrossProduct(right, forward);
+
+    // Build a rotation matrix from the camera's orientation
+    // Matrix layout in raylib is column-major
+    Matrix rotationMatrix =
+    {
+        right.x, up.x, -forward.x, 0.0f,
+        right.y, up.y, -forward.y, 0.0f,
+        right.z, up.z, -forward.z, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    // Convert the rotation matrix to a quaternion
+    return QuaternionFromMatrix(rotationMatrix);
+}
+
+
+void VisualizeCamera(ViewCamera& camera)
+{
+    auto cameraQuat = QuaternionFromCamera(camera.Camera);
+
+    rlPushMatrix();
+    rlTranslatef(camera.Camera.position.x, camera.Camera.position.y, camera.Camera.position.z);
+    Vector3 axis = Vector3Zeros;
+    float angle = 0;
+
+    QuaternionToAxisAngle(cameraQuat, &axis, &angle);
+
+    rlRotatef(angle * RAD2DEG, axis.x, axis.y, axis.z);
+    // Draw a cube at the camera position
+    DrawCube(Vector3Zeros, 0.5f, 0.5f, 0.5f, BLUE);
+
+
+    rlPopMatrix();
+
+    // Draw a line from the camera position to the target
+    DrawLine3D(camera.Camera.position, camera.Camera.target, GREEN);
+
+    DrawLine3D(camera.Camera.position, camera.Camera.position + (camera.Camera.up * 2), PURPLE);
+
+
+    // Calculate frustum parameters
+    float nearPlane = camera.NearPlaneDistance;
+    float farPlane = camera.FarPlaneDistance * 0.1f;
+    float aspectRatio = (float)GetScreenWidth() / (float)GetScreenHeight();
+
+    // Calculate near and far plane dimensions
+    float nearHeight = 2.0f * tanf(camera.Camera.fovy * 0.5f * DEG2RAD) * nearPlane;
+    float nearWidth = nearHeight * aspectRatio;
+    float farHeight = 2.0f * tanf(camera.Camera.fovy * 0.5f * DEG2RAD) * farPlane;
+    float farWidth = farHeight * aspectRatio;
+
+    // Calculate camera's forward and right vectors
+    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.Camera.target, camera.Camera.position));
+    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.Camera.up));
+    Vector3 up = Vector3CrossProduct(right, forward);
+
+    // Calculate near plane center and corners
+    Vector3 nearCenter = Vector3Add(camera.Camera.position, Vector3Scale(forward, nearPlane));
+    Vector3 nearTopLeft = Vector3Add(Vector3Add(nearCenter, Vector3Scale(up, nearHeight * 0.5f)), Vector3Scale(right, -nearWidth * 0.5f));
+    Vector3 nearTopRight = Vector3Add(Vector3Add(nearCenter, Vector3Scale(up, nearHeight * 0.5f)), Vector3Scale(right, nearWidth * 0.5f));
+    Vector3 nearBottomLeft = Vector3Add(Vector3Add(nearCenter, Vector3Scale(up, -nearHeight * 0.5f)), Vector3Scale(right, -nearWidth * 0.5f));
+    Vector3 nearBottomRight = Vector3Add(Vector3Add(nearCenter, Vector3Scale(up, -nearHeight * 0.5f)), Vector3Scale(right, nearWidth * 0.5f));
+
+    // Calculate far plane center and corners
+    Vector3 farCenter = Vector3Add(camera.Camera.position, Vector3Scale(forward, farPlane));
+    Vector3 farTopLeft = Vector3Add(Vector3Add(farCenter, Vector3Scale(up, farHeight * 0.5f)), Vector3Scale(right, -farWidth * 0.5f));
+    Vector3 farTopRight = Vector3Add(Vector3Add(farCenter, Vector3Scale(up, farHeight * 0.5f)), Vector3Scale(right, farWidth * 0.5f));
+    Vector3 farBottomLeft = Vector3Add(Vector3Add(farCenter, Vector3Scale(up, -farHeight * 0.5f)), Vector3Scale(right, -farWidth * 0.5f));
+    Vector3 farBottomRight = Vector3Add(Vector3Add(farCenter, Vector3Scale(up, -farHeight * 0.5f)), Vector3Scale(right, farWidth * 0.5f));
+
+    // Draw near plane (rectangle)
+    DrawLine3D(nearTopLeft, nearTopRight, YELLOW);
+    DrawLine3D(nearTopRight, nearBottomRight, YELLOW);
+    DrawLine3D(nearBottomRight, nearBottomLeft, YELLOW);
+    DrawLine3D(nearBottomLeft, nearTopLeft, YELLOW);
+
+    // Draw far plane (rectangle)
+    DrawLine3D(farTopLeft, farTopRight, ORANGE);
+    DrawLine3D(farTopRight, farBottomRight, ORANGE);
+    DrawLine3D(farBottomRight, farBottomLeft, ORANGE);
+    DrawLine3D(farBottomLeft, farTopLeft, ORANGE);
+
+    // Draw connecting lines (edges of frustum pyramid)
+    DrawLine3D(camera.Camera.position, farTopLeft, SKYBLUE);
+    DrawLine3D(camera.Camera.position, farTopRight, SKYBLUE);
+    DrawLine3D(camera.Camera.position, farBottomLeft, SKYBLUE);
+    DrawLine3D(camera.Camera.position, farBottomRight, SKYBLUE);
 }
 
 void GameDraw()
@@ -284,7 +400,7 @@ void GameDraw()
     BeginDrawing();
     ClearBackground(DARKGRAY);
 
-    BeginMode3D(ViewCamera);
+    BeginMode3D(GetActiveCamera().Camera);
     DrawGrid(200, 1.0f);
 
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
@@ -292,7 +408,7 @@ void GameDraw()
 
 
     std::vector<SceneObject*> renderableObjects;
-    Graph.Query(ViewCamera, renderableObjects);
+    Graph.Query(GameCam,  renderableObjects);
     //Graph.Query(ViewCamera.position, 20, renderableObjects);
     // draw the meshes
     for (auto& node : renderableObjects)
@@ -310,6 +426,8 @@ void GameDraw()
         DrawNode(node.get());
     rlDrawRenderBatchActive();
    // rlEnableDepthTest();
+
+    VisualizeCamera(GameCam);
 
     EndMode3D();
 

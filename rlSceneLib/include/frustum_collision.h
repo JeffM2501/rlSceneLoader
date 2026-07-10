@@ -3,26 +3,40 @@
 #include "raylib.h"
 #include "raymath.h"
 
-// Plane structure for frustum culling
+// Plane structure: defined by a normal vector and distance from origin
 struct Plane
 {
-    Vector3 Normal;
-    float Distance;
+    Vector3 Normal;		// Normal vector (should be normalized)
+    float Distance;		// Distance from origin along the normal
 };
 
-// Check if a bounding box is inside or intersects the camera frustum
-// Returns:
-//   -1 if completely outside
-//    0 if partially inside (intersecting)
-//    1 if completely inside
-int CheckBoundingBoxFrustum(const BoundingBox& box, const Camera3D& camera);
+// Camera frustum containing 6 planes
+struct CameraFrustum
+{
+    Plane Left;
+    Plane Right;
+    Plane Top;
+    Plane Bottom;
+    Plane Near;
+    Plane Far;
 
-// Helper function to extract frustum planes from camera
-// Returns array of 6 planes (left, right, top, bottom, near, far)
-void GetFrustumPlanes(const Camera3D& camera, Plane planes[6]);
+};
 
-// Helper function to get a point on the bounding box that is furthest in a given direction
-Vector3 GetBoxFurthestPoint(const BoundingBox& box, const Vector3& direction);
+struct ViewCamera
+{
+    Camera3D Camera;
 
-// Helper function to get a point on the bounding box that is closest in a given direction
-Vector3 GetBoxClosestPoint(const BoundingBox& box, const Vector3& direction);
+    float NearPlaneDistance = 0.01f;
+    float FarPlaneDistance = 1000.0f;
+
+    CameraFrustum Frustum;
+
+    void SetPlanes(float near, float far);
+};
+
+bool ExtractFrustumPlanes(ViewCamera& camera);
+
+float GetSignedDistanceToPlane(const Plane& plane, const Vector3& point);
+bool IsSphereInFrustum(const CameraFrustum& frustum, const Vector3& center, float radius);
+
+bool IsBoxInFrustum(const CameraFrustum& frustum, const BoundingBox& box, Matrix transform = MatrixIdentity());
