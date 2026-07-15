@@ -374,7 +374,7 @@ std::unique_ptr<SceneObject> LoadNodeGLTF(cgltf_node* node, const cgltf_data* da
         LightSceneObject* light = static_cast<LightSceneObject*>(sceneNode.get());
 
         light->EmissiveColor = Color{ (unsigned char)(node->light->color[0] * 255), (unsigned char)(node->light->color[1] * 255), (unsigned char)(node->light->color[2] * 255), 255 };
-        light->Intensity = 1.0f;// node->light->intensity;
+        light->Intensity = node->light->intensity / 400000.0f;
 
         switch (node->light->type)
         {

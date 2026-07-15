@@ -20,6 +20,9 @@ bool RegenerateTransforms = false;
 
 bool UseGameCam = true;
 
+
+bool ShowWires = false;
+
 Material DefaultMat = { 0 };
 
 Shader LightShader = { 0 };
@@ -107,7 +110,7 @@ void GameInit()
 
 			Vector3 lightPos = Vector3Transform(Vector3Zeros, lightNode->WorldMatrix);
 			Vector3 lightTarget = Vector3Transform(Vector3UnitZ, lightNode->WorldMatrix);
-		    CreateLight(lightType, lightPos, lightTarget, lightNode->EmissiveColor, LightShader);
+		    CreateLight(lightType, lightPos, lightTarget, lightNode->EmissiveColor, LightShader, lightNode->Intensity);
 		}
 
 		lightCount++;
@@ -115,7 +118,7 @@ void GameInit()
 
     if (lightCount == 0)
     {
-		CreateLight(LIGHT_DIRECTIONAL, Vector3{ -2, 1, -2 }, Vector3Zeros, WHITE, LightShader);
+		CreateLight(LIGHT_DIRECTIONAL, Vector3{ -2, 1, -2 }, Vector3Zeros, WHITE, LightShader, 1.0f);
     }
 
     for (auto& [hash, mesh] : TestScene.MeshCache)
@@ -167,6 +170,9 @@ bool GameUpdate()
     if (IsKeyPressed(KEY_TAB))
         UseGameCam = !UseGameCam;
 
+    if (IsKeyPressed(KEY_F1))
+        ShowWires = !ShowWires;
+
     Vector3 movement = { 0 };
     if (IsKeyDown(KEY_W))
         movement.x += 1.0f;
@@ -203,7 +209,7 @@ bool GameUpdate()
  
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         UpdateCameraPro(&GetActiveCamera().Camera, movement, rotation, zoom);
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_LEFT_SHIFT))
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_LEFT_CONTROL))
         UpdateCameraPro(&GetAlternateCamera().Camera, movement, rotation, zoom);
 
 	float cameraPos[3] = { GetActiveCamera().Camera.position.x, GetActiveCamera().Camera.position.y, GetActiveCamera().Camera.position.z};
@@ -225,10 +231,12 @@ void DrawNode(SceneObject* node)
     rlMultMatrixf(MatrixToFloat(node->WorldMatrix));
 
     auto inverseScale = Vector3Invert(node->Transform.scale);
-
-    DrawLine3D(Vector3{ inverseScale.x,0,0 }, Vector3{ -inverseScale.x,0,0 }, RED);
-    DrawLine3D(Vector3{ 0,inverseScale.y,0 }, Vector3{ 0,-inverseScale.y,0 }, GREEN);
-    DrawLine3D(Vector3{ 0,0,inverseScale.z }, Vector3{ 0,0,-inverseScale.z }, BLUE);
+    if (ShowWires)
+    {
+        DrawLine3D(Vector3{ inverseScale.x,0,0 }, Vector3{ -inverseScale.x,0,0 }, RED);
+        DrawLine3D(Vector3{ 0,inverseScale.y,0 }, Vector3{ 0,-inverseScale.y,0 }, GREEN);
+        DrawLine3D(Vector3{ 0,0,inverseScale.z }, Vector3{ 0,0,-inverseScale.z }, BLUE);
+    }
 
     switch (node->GetType())
     {
@@ -244,7 +252,8 @@ void DrawNode(SceneObject* node)
         //             DrawMesh(*subMesh.MeshData.get(), subMesh.MaterialData, MatrixIdentity());
         //         }
 
-        DrawBoundingBox(mesh->Bounds, GREEN);
+        if (ShowWires)
+            DrawBoundingBox(mesh->Bounds, GREEN);
 
         break;
     }
@@ -256,20 +265,26 @@ void DrawNode(SceneObject* node)
         {
         case LightSceneObject::LightTypes::Directional:
             //	rlRotatef(-45, 1, 0, 0);
-            DrawCylinderWires(Vector3{ 0,-1.0f, 0 }, 0.1f, 2.0f, 0.5F, 10, light->EmissiveColor);
+            if (ShowWires)
+                DrawCylinderWires(Vector3{ 0,-1.0f, 0 }, 0.1f, 2.0f, 0.5F, 10, light->EmissiveColor);
             break;
 
         case LightSceneObject::LightTypes::Spot:
             rlRotatef(90, 1, 0, 0);
-            DrawCylinderWires(Vector3{ 0,-light->Range, 0 }, 0.125f, light->Range * tanf(light->MaxCone), light->Range, 12, light->EmissiveColor);
+            if (ShowWires)
+                DrawCylinderWires(Vector3{ 0,-light->Range, 0 }, 0.125f, light->Range * tanf(light->MaxCone), light->Range, 12, light->EmissiveColor);
             break;
 
         case LightSceneObject::LightTypes::Point:
             rlRotatef(90, 1, 0, 0);
-            DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
-            DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
+            
+            if (ShowWires)
+            {
+                DrawSphere(Vector3Zeros, 0.5f, light->EmissiveColor);
+                DrawCylinder(Vector3{ 0,0.4f,0 }, 0.20f, 0.25f, 0.4f, 10, GRAY);
 
-            DrawSphereWires(Vector3Zeros, light->Range, 8, 8, ColorAlpha(light->EmissiveColor, 0.25f));
+                DrawSphereWires(Vector3Zeros, light->Range, 8, 8, ColorAlpha(light->EmissiveColor, 0.25f));
+            }
             break;
 
         default:
@@ -282,8 +297,11 @@ void DrawNode(SceneObject* node)
     case SceneObjectType::CameraObject:
     {
         rlRotatef(90, 1, 0, 0);
-        DrawCylinderWires(Vector3{ 0,-0.5f,0 }, 0.25f, 0.5F, 0.5f, 10, BLACK);
-        DrawCubeWires(Vector3{ 0,1.0f,0 }, 0.75f, 2, 1.0f, BLACK);
+        if (ShowWires)
+        {
+            DrawCylinderWires(Vector3{ 0,0.0f, 0 }, 0.25f, 0.5F, 0.5f, 10, BLACK);
+            DrawCubeWires(Vector3{ 0,1.5f, 0 }, 0.75f, 2, 1.0f, BLACK);
+        }
         break;
     }
 
@@ -321,7 +339,6 @@ Quaternion QuaternionFromCamera(Camera3D camera)
     return QuaternionFromMatrix(rotationMatrix);
 }
 
-
 void VisualizeCamera(ViewCamera& camera)
 {
     auto cameraQuat = QuaternionFromCamera(camera.Camera);
@@ -334,20 +351,20 @@ void VisualizeCamera(ViewCamera& camera)
     QuaternionToAxisAngle(cameraQuat, &axis, &angle);
 
     rlRotatef(angle * RAD2DEG, axis.x, axis.y, axis.z);
-    // Draw a cube at the camera position
-    DrawCube(Vector3Zeros, 0.5f, 0.5f, 0.5f, BLUE);
 
-
+    rlRotatef(90, 1, 0, 0);
+    BeginShaderMode(LightShader);
+    DrawCylinder(Vector3{ 0,0.0f, 0 }, 0.25f, 0.5F, 0.5f, 10, DARKBLUE);
+    DrawCube(Vector3{ 0,1.5f, 0 }, 0.75f, 2, 1.0f, DARKBLUE);
+    EndShaderMode();
     rlPopMatrix();
 
     // Draw a line from the camera position to the target
     DrawLine3D(camera.Camera.position, camera.Camera.target, GREEN);
-
     DrawLine3D(camera.Camera.position, camera.Camera.position + (camera.Camera.up * 2), PURPLE);
 
-
     // Calculate frustum parameters
-    float nearPlane = camera.NearPlaneDistance;
+    float nearPlane = camera.NearPlaneDistance * 100;
     float farPlane = camera.FarPlaneDistance * 0.1f;
     float aspectRatio = (float)GetScreenWidth() / (float)GetScreenHeight();
 
@@ -405,7 +422,6 @@ void GameDraw()
 
     DrawLine3D(Vector3{ 100,0.01f,0 }, Vector3{ -100, 0.01f, 0 }, RED);
     DrawLine3D(Vector3{ 0,0.01f,100 }, Vector3{ 0, 0.01f, -100 }, BLUE);
-
 
     std::vector<SceneObject*> renderableObjects;
     Graph.Query(GameCam,  renderableObjects);
